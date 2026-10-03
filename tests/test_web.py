@@ -16,11 +16,11 @@ class WebTests(unittest.TestCase):
 
     def test_page_and_token_gate(self):
         self.assertEqual(self.client.get("/").status_code, 200)
-        self.assertIn("v0.3.1", self.client.get("/").text)
+        self.assertIn("v0.4.0", self.client.get("/").text)
         self.assertEqual(self.client.get("/assets/app.js").status_code, 200)
         with patch.dict(os.environ, {"RENDER_GIT_COMMIT": "abcdef123456"}):
             self.assertEqual(self.client.get("/api/version").json(),
-                             {"version": "0.3.1", "commit": "abcdef1"})
+                             {"version": "0.4.0", "commit": "abcdef1"})
         with patch.dict(os.environ, {"APP_ACCESS_TOKEN": "secret"}):
             self.assertEqual(self.client.get("/api/capabilities").status_code, 401)
             allowed = self.client.get("/api/capabilities", headers={"Authorization": "Bearer secret"})

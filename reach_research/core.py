@@ -142,6 +142,77 @@ def extract_html(raw):
     return title, body
 
 
+class YahooXParser(HTMLParser):
+    """Read public X status links and snippets from Yahoo Japan search results."""
+    def __init__(self):
+        super().__init__()
+        self.rows = []
+        self.current = None
+        self.in_anchor = False
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if tag == "li":
+            self.current = {"title": "", "url": "", "snippet": "", "published": "",
+                            "discovery_method": "yahoo-jp"}
+        elif self.current is not None and tag == "a":
+            url = canonical_url(attrs.get("href", ""))
+            if re.search(r"^https://(?:www\.)?(?:x|twitter)\.com/[^/]+/status/\d+", url):
+                self.current["url"] = url
+                self.in_anchor = True
+
+    def handle_endtag(self, tag):
+        if tag == "a":
+            self.in_anchor = False
+        elif tag == "li" and self.current is not None:
+            if self.current["url"] and self.current["title"]:
+                self.current["title"] = " ".join(self.current["title"].split())
+                self.current["snippet"] = " ".join(self.current["snippet"].split())[:300]
+                date = re.match(r"\d{4}/\d{1,2}/\d{1,2}", self.current["snippet"])
+                if date:
+                    self.current["published"] = date.group()
+                self.rows.append(self.current)
+            self.current = None
+
+    def handle_data(self, data):
+        if self.current is not None and self.current["url"]:
+            field = "title" if self.in_anchor else "snippet"
+            self.current[field] += data
+
+
+def yahoo_x_search(query, limit):
+    url = "https://search.yahoo.co.jp/search?" + urlencode({"p": query + " site:x.com", "n": limit})
+    raw, content_type, _ = download(url)
+    if content_type != "text/html":
+        raise ValueError("Yahoo search did not return HTML")
+    parser = YahooXParser()
+    parser.feed(raw.decode("utf-8", "replace"))
+    return parser.rows[:limit]
+
+
+class XMetaParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.meta = {}
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "meta":
+            attrs = dict(attrs)
+            key = attrs.get("property") or attrs.get("name")
+            if key in ("og:title", "og:description"):
+                self.meta[key] = attrs.get("content", "")
+
+
+def extract_x_post(raw):
+    parser = XMetaParser()
+    parser.feed(raw.decode("utf-8", "replace"))
+    title = parser.meta.get("og:title", "").strip()
+    body = parser.meta.get("og:description", "").strip()
+    if " on X" not in title or not body:
+        raise ValueError("public X post metadata is unavailable")
+    return title, body
+
+
 def parse_rss(raw):
     root = ET.fromstring(raw)
     found = []
@@ -249,32 +320,6 @@ def brave_search(query, limit):
             for item in payload.get("web", {}).get("results", [])]
 
 
-def x_api_search(query, limit):
-    """Search recent public posts with the user's official X API bearer token."""
-    token = os.environ["X_BEARER_TOKEN"]
-    params = {"query": query, "max_results": max(10, min(100, limit)),
-              "tweet.fields": "created_at,author_id", "expansions": "author_id",
-              "user.fields": "username"}
-    url = "https://api.x.com/2/tweets/search/recent?" + urlencode(params)
-    raw, _, _ = download(url, headers={"Authorization": "Bearer " + token,
-                                    "Accept": "application/json"})
-    payload = json.loads(raw)
-    users = {str(user.get("id")): user.get("username", "")
-             for user in payload.get("includes", {}).get("users", [])}
-    found = []
-    for post in payload.get("data", []):
-        post_id = str(post.get("id", ""))
-        body = post.get("text", "")
-        if not post_id.isdigit() or not body:
-            continue
-        username = users.get(str(post.get("author_id")), "")
-        post_url = "https://x.com/{}/status/{}".format(username or "i/web", post_id)
-        found.append({"title": body.splitlines()[0][:160], "url": post_url,
-                      "snippet": body[:300], "published": post.get("created_at", ""),
-                      "text": body, "status": "read", "discovery_method": "x-api"})
-    return found[:limit]
-
-
 def exa_search(query, limit):
     mcporter = shutil.which("mcporter")
     npx = shutil.which("npx")
@@ -321,7 +366,7 @@ def diagnostics():
         "search_backend_default": select_backend("auto"),
         "exa_npx_available": bool(shutil.which("mcporter") or shutil.which("npx")),
         "brave_key_configured": bool(os.environ.get("BRAVE_SEARCH_API_KEY")),
-        "x_api_configured": bool(os.environ.get("X_BEARER_TOKEN")),
+        "x_public_search": "yahoo-jp",
         "opencli_installed": bool(shutil.which("opencli")),
         "github_cli_installed": bool(shutil.which("gh")),
         "youtube_cli_installed": bool(shutil.which("yt-dlp")),
@@ -354,6 +399,11 @@ def read_page(url, use_scrapling=False):
     clean = safe_public_url(url)
     if not clean:
         raise ValueError("non-public or invalid URL")
+    if re.search(r"^https://(?:www\.)?(?:x|twitter)\.com/[^/]+/status/\d+", clean):
+        raw, content_type, _ = download(clean)
+        if content_type != "text/html":
+            raise ValueError("X post did not return HTML")
+        return extract_x_post(raw)
     if use_scrapling:
         from scrapling.fetchers import Fetcher
         page = Fetcher.get(clean, timeout=12)
@@ -370,6 +420,8 @@ def read_page(url, use_scrapling=False):
 def confirms_social_post(row, body):
     if row["source"] not in SOCIAL_PAGES:
         return True
+    if row["source"] == "x":
+        return bool(re.search(r"^https://(?:www\.)?(?:x|twitter)\.com/[^/]+/status/\d+", row["url"])) and len(body) >= 5
     title = " ".join(row["title"].split())
     if title.lower() in ("instagram", "facebook", "x", "tiktok", "youtube", "reddit", "threads"):
         return False
@@ -402,8 +454,8 @@ def research(theme, sources=None, limit=5, max_pages=20, use_scrapling=False,
     if use_direct:
         tasks.extend((name, query, "direct") for name in selected if name in DIRECT_TOOLS
                      and shutil.which(DIRECT_TOOLS[name]) for query in plans[name])
-    if "x" in selected and os.environ.get("X_BEARER_TOKEN"):
-        tasks.extend(("x", query, "x-api") for query in plans["x"])
+    if "x" in selected:
+        tasks.extend(("x", query, "yahoo-x") for query in plans["x"])
     tasks.extend((name, query, "index") for name in selected for query in plans[name])
     completed = {}
     with ThreadPoolExecutor(max_workers=min(2 if backend == "exa" else 6, len(tasks) or 1)) as pool:
@@ -413,8 +465,8 @@ def research(theme, sources=None, limit=5, max_pages=20, use_scrapling=False,
                 future = pool.submit(opencli_search, name, query, limit)
             elif method == "direct":
                 future = pool.submit(direct_search, name, query, limit)
-            elif method == "x-api":
-                future = pool.submit(x_api_search, query, limit)
+            elif method == "yahoo-x":
+                future = pool.submit(yahoo_x_search, query, limit)
             else:
                 future = pool.submit(search_source, name, query, limit, backend)
             futures[future] = index
@@ -439,9 +491,8 @@ def research(theme, sources=None, limit=5, max_pages=20, use_scrapling=False,
         key = (result["source"], clean)
         if clean and key not in seen:
             result["url"] = clean
-            if result.get("discovery_method") != "x-api":
-                result["status"] = "discovery_only"
-                result["text"] = ""
+            result["status"] = "discovery_only"
+            result["text"] = ""
             result["error"] = ""
             seen.add(key)
             unique.append(result)
@@ -459,15 +510,8 @@ def research(theme, sources=None, limit=5, max_pages=20, use_scrapling=False,
         errors = [item["error"] for item in attempts if item["error"]]
         if errors:
             coverage[name]["note"] = "; ".join(errors)[:300]
-        coverage[name]["read"] = sum(row["status"] == "read" for row in rows)
-        if name == "x" and not os.environ.get("X_BEARER_TOKEN"):
-            coverage[name]["note"] = ("X内部検索は未接続です。公開Web検索の掲載結果のみを調査しました。"
-                                      + (" " + coverage[name]["note"] if coverage[name]["note"] else ""))
-        elif name == "x" and not any(item["method"] == "x-api" and not item["error"] for item in attempts):
-            coverage[name]["note"] = ("X API検索に失敗しました。公開Web検索の掲載結果のみを調査しました。 "
-                                      + coverage[name]["note"]).strip()
-        elif name == "x":
-            coverage[name]["note"] = ("X APIは直近7日間の公開投稿を検索しました。 "
+        if name == "x":
+            coverage[name]["note"] = ("無料の公開Web検索でX投稿を探しました。X内の全投稿は対象外です。 "
                                       + coverage[name]["note"]).strip()
     candidates = []
     for index in range(max((len(rows) for rows in by_source.values()), default=0)):
@@ -481,7 +525,8 @@ def research(theme, sources=None, limit=5, max_pages=20, use_scrapling=False,
             row = futures[future]
             try:
                 title, body = future.result()
-                if len(body) >= 120 and confirms_social_post(row, body):
+                minimum = 5 if row["source"] == "x" else 120
+                if len(body) >= minimum and confirms_social_post(row, body):
                     row["status"] = "read"
                     row["text"] = body[:12000]
                     row["page_title"] = title
@@ -500,7 +545,7 @@ def research(theme, sources=None, limit=5, max_pages=20, use_scrapling=False,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "method": backend + " search / Google News RSS" + (" / native tools" if use_direct else "") +
                   (" / OpenCLI" if use_opencli else "") +
-                  (" / X API recent search" if "x" in selected and os.environ.get("X_BEARER_TOKEN") else "") +
+                  (" / Yahoo Japan public X search" if "x" in selected else "") +
                   "; direct page retrieval",
         "depth": depth,
         "coverage": coverage,

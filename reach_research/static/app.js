@@ -72,9 +72,7 @@ async function loadCapabilities() {
     renderSources(info.sources);
     $("scrapling").disabled = !info.diagnostics.scrapling_installed;
     $("scrapling-note").textContent = info.diagnostics.scrapling_installed ? "本文の取得に使用します" : "この環境では利用できません";
-    $("x-api-status").textContent = info.diagnostics.x_api_configured ?
-      "X内部検索: APIトークン設定あり（利用可否は調査時に確認）" :
-      "X内部検索: 未接続（公開Web検索のみ）";
+    $("x-search-status").textContent = "X: 無料の公開Web検索で投稿を探します。X内の全投稿は対象外です。";
   } catch (error) {
     if (error.status === 401) showAccess();
     else showError(`接続状態を確認できません: ${error.message}`);
