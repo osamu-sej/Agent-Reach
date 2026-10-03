@@ -14,6 +14,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from . import __version__
 from .core import SOURCES, diagnostics, markdown_report, research
 
 
@@ -110,6 +111,12 @@ def home():
 @app.get("/healthz")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/api/version")
+def version():
+    commit = os.environ.get("RENDER_GIT_COMMIT", "")
+    return {"version": __version__, "commit": commit[:7] if commit else ""}
 
 
 @app.get("/api/capabilities", dependencies=[Depends(require_token)])

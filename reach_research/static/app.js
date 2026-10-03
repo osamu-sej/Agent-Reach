@@ -72,10 +72,20 @@ async function loadCapabilities() {
     renderSources(info.sources);
     $("scrapling").disabled = !info.diagnostics.scrapling_installed;
     $("scrapling-note").textContent = info.diagnostics.scrapling_installed ? "本文の取得に使用します" : "この環境では利用できません";
+    $("x-api-status").textContent = info.diagnostics.x_api_configured ?
+      "X内部検索: APIトークン設定あり（利用可否は調査時に確認）" :
+      "X内部検索: 未接続（公開Web検索のみ）";
   } catch (error) {
     if (error.status === 401) showAccess();
     else showError(`接続状態を確認できません: ${error.message}`);
   }
+}
+
+async function loadVersion() {
+  try {
+    const info = await api("/api/version");
+    $("version-label").textContent = `v${info.version}${info.commit ? ` · ${info.commit}` : ""}`;
+  } catch (_) { /* The version in the HTML remains visible. */ }
 }
 
 function setView(view) {
@@ -207,4 +217,5 @@ $("download-md").addEventListener("click", () => download("md"));
 $("download-json").addEventListener("click", () => download("json"));
 document.querySelectorAll("[data-filter]").forEach(button => button.addEventListener("click", () => { filter = button.dataset.filter; document.querySelectorAll("[data-filter]").forEach(tab => tab.classList.toggle("active", tab === button)); renderEvidence(); }));
 loadCapabilities();
+loadVersion();
 if (currentJob) pollJob(currentJob);

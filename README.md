@@ -25,7 +25,9 @@ APP_ACCESS_TOKEN='長いランダムなキー' HOST=0.0.0.0 .venv312/bin/reach-r
 
 Web画面は公開資料の検索と取得だけを実行します。ローカルCLIで利用できるOpenCLIのログイン済みセッション、`gh`、`yt-dlp` はWeb画面から呼び出しません。調査ジョブは実行プロセスのメモリに保持するため、再起動すると画面からのジョブ参照は失われます。保存済みファイルは `reports/web/` に残ります。
 
-Xの内部検索を使う場合は、[X Developer Portal](https://developer.x.com/) で取得したBearer Tokenをサーバーの `X_BEARER_TOKEN` 環境変数に設定します。Renderではサービスの **Environment** に設定してください。トークンをWeb画面やリポジトリに入力しないでください。公式のRecent Search APIを使用するため、検索対象は直近7日間の公開投稿です。APIの利用可否と料金はXの契約条件に依存します。トークンがない場合、X欄は公開Web検索に掲載された投稿だけを探し、画面に「X内部検索は未接続」と表示します。0件はX上に投稿が存在しないことを意味しません。
+Xの内部検索を使う場合は、[X Developer Console](https://developer.x.com/) で承認済みAppの **Keys and tokens → Bearer Token** を取得します。Render Dashboardで `agent-reach-research` を開き、**Environment → Add Environment Variable** からKeyに `X_BEARER_TOKEN`、Valueに取得したトークンを設定し、**Save and deploy** を選びます。トークンをWeb画面やリポジトリに入力しないでください。画面のX接続表示は設定の有無だけを示し、実際の利用可否は調査結果のX欄とエラーで確認します。公式のRecent Search APIを使用するため、検索対象は直近7日間の公開投稿です。APIの利用可否と料金はXの契約条件に依存します。トークンがない場合、X欄は公開Web検索に掲載された投稿だけを探し、画面に「X内部検索は未接続」と表示します。0件はX上に投稿が存在しないことを意味しません。
+
+画面右上の `v0.3.1 · コミット番号` で、Renderが現在配信している版を確認できます。更新後はページを再読み込みしてください。
 
 ### 外出先から使う
 

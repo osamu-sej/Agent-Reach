@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#111c24">
   <title>Agent-Reach | Web・SNSリサーチ</title>
-  <link rel="stylesheet" href="/assets/style.css">
-  <script src="/assets/app.js" defer></script>
+  <link rel="stylesheet" href="/assets/style.css?v=0.3.1">
+  <script src="/assets/app.js?v=0.3.1" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -14,6 +14,7 @@
       <a class="brand" href="/" aria-label="Agent-Reach ホーム"><span class="brand-icon">◎</span><span>Agent<span class="brand-light">-Reach</span></span></a>
       <div class="header-actions">
         <span class="header-note">出典を追える調査ワークスペース</span>
+        <span id="version-label" class="version-tag">v0.3.1</span>
         <button class="ghost-button" id="access-toggle" type="button" aria-expanded="false" aria-controls="access-panel">アクセスキー</button>
       </div>
     </div>
@@ -38,7 +39,7 @@
         <form id="research-form">
           <div class="field"><label for="theme">調査テーマ <span class="required">必須</span></label><textarea id="theme" name="theme" rows="3" maxlength="200" required placeholder="例：日本の小売業における生成AI活用"></textarea><p class="field-hint">製品名、業界、課題などを具体的に書くと探しやすくなります。</p></div>
 
-          <fieldset class="source-field"><legend>対象媒体 <span id="source-count" class="count-pill">10媒体</span></legend><div id="sources" class="source-grid"></div><div class="source-actions"><button type="button" id="select-all">すべて選択</button><button type="button" id="select-none">選択解除</button></div></fieldset>
+          <fieldset class="source-field"><legend>対象媒体 <span id="source-count" class="count-pill">10媒体</span></legend><div id="sources" class="source-grid"></div><div class="source-actions"><button type="button" id="select-all">すべて選択</button><button type="button" id="select-none">選択解除</button></div><p id="x-api-status" class="field-hint">Xの接続状態を確認中…</p></fieldset>
 
           <div class="settings-grid">
             <div class="field"><label for="depth">調査の深さ</label><select id="depth" name="depth"><option value="quick">クイック · 1観点</option><option value="balanced" selected>標準 · 2観点</option><option value="deep">詳細 · 複数観点</option></select></div>
@@ -65,7 +66,7 @@
       </section>
     </div>
 
-    <footer class="footer"><span>Agent-Reach</span><span>検索結果だけでは投稿本文を確認したことにはなりません。</span></footer>
+    <footer class="footer"><span>Agent-Reach v0.3.1</span><span>検索結果だけでは投稿本文を確認したことにはなりません。</span></footer>
   </main>
 </body>
 </html>
