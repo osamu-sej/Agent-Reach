@@ -1,10 +1,11 @@
+import json
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from reach_research.core import (canonical_url, confirms_social_post, direct_search, extract_html,
                                  markdown_report, opencli_search, parse_rss,
-                                 plan_queries, search_source)
+                                 plan_queries, research, search_source, x_api_search)
 
 
 RSS = b"""<?xml version="1.0"?><rss><channel>
@@ -53,6 +54,37 @@ class CoreTests(unittest.TestCase):
             rows = direct_search("github", "example", 2)
         self.assertEqual(rows[0]["url"], "https://github.com/a/demo")
         self.assertEqual(run.call_args.args[0][:3], ["gh", "search", "repos"])
+
+    def test_x_api_search_uses_official_result_body(self):
+        payload = {"data": [{"id": "123", "text": "短い投稿", "author_id": "7",
+                             "created_at": "2026-10-03T00:00:00Z"}],
+                   "includes": {"users": [{"id": "7", "username": "example"}]}}
+        with patch.dict("reach_research.core.os.environ", {"X_BEARER_TOKEN": "test"}), \
+             patch("reach_research.core.download", return_value=(json.dumps(payload).encode(), "application/json", "https://api.x.com/")) as fetch:
+            rows = x_api_search("商品", 5)
+        self.assertEqual(rows[0]["url"], "https://x.com/example/status/123")
+        self.assertEqual(rows[0]["text"], "短い投稿")
+        self.assertIn("/2/tweets/search/recent?", fetch.call_args.args[0])
+        self.assertEqual(fetch.call_args.kwargs["headers"]["Authorization"], "Bearer test")
+
+    def test_research_marks_x_index_only_without_token(self):
+        with patch.dict("reach_research.core.os.environ", {"X_BEARER_TOKEN": ""}), \
+             patch("reach_research.core.search_source", return_value=[]):
+            result = research("商品", sources=["x"], depth="quick", use_direct=False)
+        self.assertEqual(result["coverage"]["x"]["discovered"], 0)
+        self.assertIn("X内部検索は未接続", result["coverage"]["x"]["note"])
+
+    def test_research_preserves_x_api_verified_text(self):
+        api_row = {"title": "投稿", "url": "https://x.com/example/status/123", "snippet": "投稿",
+                   "published": "", "text": "投稿", "status": "read", "discovery_method": "x-api"}
+        with patch.dict("reach_research.core.os.environ", {"X_BEARER_TOKEN": "test"}), \
+             patch("reach_research.core.x_api_search", return_value=[api_row]), \
+             patch("reach_research.core.search_source", return_value=[]), \
+             patch("reach_research.core.read_page") as read:
+            result = research("商品", sources=["x"], depth="quick", use_direct=False)
+        self.assertEqual(result["coverage"]["x"]["read"], 1)
+        self.assertEqual(result["results"][0]["text"], "投稿")
+        read.assert_not_called()
 
     def test_report_separates_verified_and_unverified(self):
         data = {"theme": "T", "created_at": "today", "coverage": {"x": {"status": "discovery_only", "discovered": 1, "read": 0}},

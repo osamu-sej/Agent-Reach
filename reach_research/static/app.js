@@ -153,7 +153,13 @@ function renderResult(result) {
     const counts = document.createElement("span"); counts.className = "counts";
     counts.textContent = state.status === "error" ? "取得エラー" : `発見 ${state.discovered} / 確認 ${state.read}`;
     item.title = state.note || "";
-    item.append(name, counts); list.append(item);
+    item.append(name, counts);
+    if (source === "x" && state.note) {
+      const note = document.createElement("small"); note.className = "coverage-note";
+      note.textContent = state.note;
+      item.append(note);
+    }
+    list.append(item);
   });
   renderEvidence();
 }

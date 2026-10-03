@@ -25,6 +25,8 @@ APP_ACCESS_TOKEN='長いランダムなキー' HOST=0.0.0.0 .venv312/bin/reach-r
 
 Web画面は公開資料の検索と取得だけを実行します。ローカルCLIで利用できるOpenCLIのログイン済みセッション、`gh`、`yt-dlp` はWeb画面から呼び出しません。調査ジョブは実行プロセスのメモリに保持するため、再起動すると画面からのジョブ参照は失われます。保存済みファイルは `reports/web/` に残ります。
 
+Xの内部検索を使う場合は、[X Developer Portal](https://developer.x.com/) で取得したBearer Tokenをサーバーの `X_BEARER_TOKEN` 環境変数に設定します。Renderではサービスの **Environment** に設定してください。トークンをWeb画面やリポジトリに入力しないでください。公式のRecent Search APIを使用するため、検索対象は直近7日間の公開投稿です。APIの利用可否と料金はXの契約条件に依存します。トークンがない場合、X欄は公開Web検索に掲載された投稿だけを探し、画面に「X内部検索は未接続」と表示します。0件はX上に投稿が存在しないことを意味しません。
+
 ### 外出先から使う
 
 `render.yaml` はRenderの無料Webサービスを定義しています。Render Dashboardの **New → Blueprint** でこのリポジトリの `main` を選ぶと、DockerfileからPython 3.12とNode.jsを備えたWebアプリを配置できます。公開URLはHTTPSの `onrender.com` サブドメインです。Renderが生成する `APP_ACCESS_TOKEN` をDashboardのEnvironmentで確認し、Web画面の「アクセスキー」に入力してください。キーはリポジトリに保存しません。
@@ -83,7 +85,8 @@ Brave Search APIのキーを `BRAVE_SEARCH_API_KEY` 環境変数に設定する�
 |---|---|---|
 | Web | Exa MCP、Brave Search API（キーあり）、またはBing RSS | 公開HTMLを直接取得 |
 | ニュース | Google News RSS | リンク先に到達できた場合のみ |
-| X、Reddit、YouTube、GitHub、Instagram、Threads、TikTok、Facebook | Exa、Brave、Bingの媒体別検索。GitHubは`gh`、YouTubeは`yt-dlp`を併用。X、Reddit、Instagram、Facebookは任意でOpenCLIも利用 | 公開ページから本文を取得できた場合のみ |
+| X | 公式Recent Search API（`X_BEARER_TOKEN` がある場合）とExa、Brave、Bingの公開Web検索。CLIでは任意でOpenCLIも利用 | APIで返された投稿本文、または公開ページで投稿本文を照合できた場合 |
+| Reddit、YouTube、GitHub、Instagram、Threads、TikTok、Facebook | Exa、Brave、Bingの媒体別検索。GitHubは`gh`、YouTubeは`yt-dlp`を併用。Reddit、Instagram、Facebookは任意でOpenCLIも利用 | 公開ページから本文を取得できた場合のみ |
 
 媒体別検索では、返されたURLのドメインが対象媒体と一致するか検査します。ログインが必要な投稿や検索エンジンに載らない投稿は漏れます。取得失敗は `coverage` と各資料の `error` に残します。取得済みの検索スニペットを投稿本文として扱いません。リクエストは公開URLに限り、非公開IP、ローカルアドレス、非HTTP URLは拒否します。
 
