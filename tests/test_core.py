@@ -1,7 +1,10 @@
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
-from reach_research.core import canonical_url, confirms_social_post, extract_html, markdown_report, parse_rss, search_source
+from reach_research.core import (canonical_url, confirms_social_post, extract_html,
+                                 markdown_report, opencli_search, parse_rss,
+                                 plan_queries, search_source)
 
 
 RSS = b"""<?xml version="1.0"?><rss><channel>
@@ -30,6 +33,18 @@ class CoreTests(unittest.TestCase):
     def test_social_login_shell_is_not_post_evidence(self):
         row = {"source": "instagram", "title": "Instagram"}
         self.assertFalse(confirms_social_post(row, "Log in to see this post " * 20))
+
+    def test_query_plan_is_bounded_and_inspectable(self):
+        self.assertEqual(plan_queries("生成AI 小売業", "web", "quick"), ["生成AI 小売業"])
+        self.assertEqual(len(plan_queries("生成AI 小売業", "web", "balanced")), 2)
+        self.assertIn("生成AI 小売業 課題 批判", plan_queries("生成AI 小売業", "web", "deep"))
+
+    def test_opencli_results_keep_only_the_requested_platform(self):
+        output = "url: https://x.com/example/status/123\nurl: https://example.com/other\n"
+        with patch("reach_research.core.shutil.which", return_value="/usr/bin/opencli"), \
+             patch("reach_research.core.subprocess.run", return_value=SimpleNamespace(returncode=0, stdout=output, stderr="")):
+            rows = opencli_search("x", "topic", 5)
+        self.assertEqual([row["url"] for row in rows], ["https://x.com/example/status/123"])
 
     def test_report_separates_verified_and_unverified(self):
         data = {"theme": "T", "created_at": "today", "coverage": {"x": {"status": "discovery_only", "discovered": 1, "read": 0}},

@@ -3,6 +3,7 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from html.parser import HTMLParser
+from importlib.util import find_spec
 import ipaddress
 import json
 import os
@@ -32,6 +33,7 @@ SOURCES = {
 }
 SOCIAL = set(SOURCES) - {"web", "news"}
 SOCIAL_PAGES = SOCIAL - {"github"}
+OPENCLI_SITES = {"x": "twitter", "reddit": "reddit", "instagram": "instagram", "facebook": "facebook"}
 SOURCE_HOSTS = {
     "x": ("x.com", "twitter.com"),
     "reddit": ("reddit.com",),
@@ -157,6 +159,53 @@ def relevant(row, theme):
     return not terms or sum(term in haystack for term in terms) >= max(1, (len(terms) + 1) // 2)
 
 
+def plan_queries(theme, source, depth="balanced", extra_queries=None):
+    """Bounded, inspectable search plan; no model-generated terms are invented."""
+    if depth not in ("quick", "balanced", "deep"):
+        raise ValueError("depth must be quick, balanced, or deep")
+    japanese = bool(re.search(r"[\u3040-\u30ff\u3400-\u9fff]", theme))
+    if source in ("web", "news"):
+        angles = (["公式 発表", "事例 導入", "課題 批判"] if japanese else
+                  ["official announcement", "case study adoption", "limitations criticism"])
+    else:
+        angles = (["体験 評判", "課題"] if japanese else ["experience discussion", "issues"])
+    planned = [theme.strip()]
+    if depth == "balanced":
+        planned.append(theme.strip() + " " + angles[0])
+    elif depth == "deep":
+        planned.extend(theme.strip() + " " + angle for angle in angles)
+    planned.extend(query.strip() for query in (extra_queries or []) if query.strip())
+    return list(dict.fromkeys(planned))
+
+
+def source_url_matches(source, url):
+    hosts = SOURCE_HOSTS.get(source)
+    if not hosts:
+        return True
+    hostname = (urlparse(url).hostname or "").lower()
+    return any(hostname == host or hostname.endswith("." + host) for host in hosts)
+
+
+def opencli_search(source, query, limit):
+    """Search through a user's already configured OpenCLI/Chrome session."""
+    if source not in OPENCLI_SITES:
+        return []
+    if not shutil.which("opencli"):
+        raise ValueError("OpenCLI is not installed")
+    command = ["opencli", OPENCLI_SITES[source], "search", query, "-f", "yaml"]
+    process = subprocess.run(command, capture_output=True, text=True, timeout=35, check=False)
+    if process.returncode:
+        raise ValueError("OpenCLI search failed: " + process.stderr[:150])
+    found = []
+    seen = set()
+    for match in re.findall(r"https?://[^\s<>\"']+", process.stdout):
+        url = canonical_url(match.rstrip(",;)]}"))
+        if url and url not in seen and source_url_matches(source, url):
+            found.append({"title": url, "url": url, "snippet": "", "published": "", "discovery_method": "opencli"})
+            seen.add(url)
+    return found[:limit]
+
+
 def brave_search(query, limit):
     api_key = os.environ["BRAVE_SEARCH_API_KEY"]
     url = "https://api.search.brave.com/res/v1/web/search?" + urlencode({"q": query, "count": limit})
@@ -204,6 +253,18 @@ def select_backend(requested):
     return "bing"
 
 
+def diagnostics():
+    """Local capability inventory; availability does not assert live access."""
+    return {
+        "search_backend_default": select_backend("auto"),
+        "exa_npx_available": bool(shutil.which("npx")),
+        "brave_key_configured": bool(os.environ.get("BRAVE_SEARCH_API_KEY")),
+        "opencli_installed": bool(shutil.which("opencli")),
+        "scrapling_installed": find_spec("scrapling") is not None,
+        "note": "Installed or configured does not prove login, quota, or live platform access.",
+    }
+
+
 def search_source(source, theme, limit, backend="auto"):
     if source == "news":
         url = "https://news.google.com/rss/search?" + urlencode({"q": theme, "hl": "ja", "gl": "JP", "ceid": "JP:ja"})
@@ -219,13 +280,7 @@ def search_source(source, theme, limit, backend="auto"):
             url = "https://www.bing.com/search?" + urlencode({"format": "rss", "q": query, "count": limit})
             raw, _, _ = download(url)
             results = [row for row in parse_rss(raw) if relevant(row, theme)]
-    if source in SOURCE_HOSTS:
-        allowed = SOURCE_HOSTS[source]
-        results = [row for row in results if any(
-            (urlparse(row["url"]).hostname or "").lower() == host or
-            (urlparse(row["url"]).hostname or "").lower().endswith("." + host)
-            for host in allowed
-        )]
+    results = [row for row in results if source_url_matches(source, row["url"])]
     return results[:limit]
 
 
@@ -258,7 +313,8 @@ def confirms_social_post(row, body):
     return len(key) >= 12 and key in " ".join(body.split()).lower()
 
 
-def research(theme, sources=None, limit=5, max_pages=20, use_scrapling=False, search_backend="auto"):
+def research(theme, sources=None, limit=5, max_pages=20, use_scrapling=False,
+             search_backend="auto", depth="balanced", extra_queries=None, use_opencli=False):
     if not theme or not theme.strip():
         raise ValueError("theme is required")
     if not 1 <= limit <= 20 or not 0 <= max_pages <= 100:
@@ -270,37 +326,59 @@ def research(theme, sources=None, limit=5, max_pages=20, use_scrapling=False, se
     unknown = set(selected) - set(SOURCES)
     if unknown:
         raise ValueError("unknown source: " + ", ".join(sorted(unknown)))
-    coverage = {name: {"status": "pending", "discovered": 0, "read": 0, "note": ""} for name in selected}
+    plans = {name: plan_queries(theme, name, depth, extra_queries) for name in selected}
+    coverage = {name: {"status": "pending", "discovered": 0, "read": 0, "note": "", "queries": []} for name in selected}
     discovered = []
-    with ThreadPoolExecutor(max_workers=min(2 if backend == "exa" else 6, len(selected) or 1)) as pool:
-        futures = {pool.submit(search_source, name, theme.strip(), limit, backend): name for name in selected}
+    tasks = [(name, query, "index") for name in selected for query in plans[name]]
+    if use_opencli:
+        tasks.extend((name, query, "opencli") for name in selected if name in OPENCLI_SITES for query in plans[name])
+    completed = {}
+    with ThreadPoolExecutor(max_workers=min(2 if backend == "exa" else 6, len(tasks) or 1)) as pool:
+        futures = {pool.submit(opencli_search if method == "opencli" else search_source,
+                               name, query, limit, *(() if method == "opencli" else (backend,))): index
+                   for index, (name, query, method) in enumerate(tasks)}
         for future in as_completed(futures):
-            name = futures[future]
+            index = futures[future]
             try:
-                results = future.result()
-                coverage[name]["discovered"] = len(results)
-                coverage[name]["status"] = "discovered" if results else "empty"
-                for result in results:
-                    result["source"] = name
-                    discovered.append(result)
+                completed[index] = (future.result(), "")
             except (HTTPError, URLError, TimeoutError, ValueError, ET.ParseError, subprocess.TimeoutExpired) as exc:
-                coverage[name].update(status="error", note=str(exc)[:200])
+                completed[index] = ([], str(exc)[:200])
+    for index, (name, query, method) in enumerate(tasks):
+        results, error = completed[index]
+        coverage[name]["queries"].append({"query": query, "method": method, "found": len(results), "error": error})
+        for result in results:
+            result["source"] = name
+            result["queries"] = [query]
+            result["discovery_method"] = result.get("discovery_method", "google-news" if name == "news" else backend)
+            discovered.append(result)
     seen = set()
     unique = []
     for result in discovered:
         clean = canonical_url(result["url"])
-        if clean and clean not in seen:
+        key = (result["source"], clean)
+        if clean and key not in seen:
             result["url"] = clean
             result["status"] = "discovery_only"
             result["text"] = ""
             result["error"] = ""
-            seen.add(clean)
+            seen.add(key)
             unique.append(result)
+        elif clean:
+            existing = next(row for row in unique if row["source"] == result["source"] and row["url"] == clean)
+            if result["queries"][0] not in existing["queries"]:
+                existing["queries"].append(result["queries"][0])
     order = {name: index for index, name in enumerate(selected)}
     unique.sort(key=lambda row: order[row["source"]])
     by_source = {name: [row for row in unique if row["source"] == name] for name in selected}
+    for name, rows in by_source.items():
+        coverage[name]["discovered"] = len(rows)
+        attempts = coverage[name]["queries"]
+        coverage[name]["status"] = "discovered" if rows else ("error" if all(item["error"] for item in attempts) else "empty")
+        errors = [item["error"] for item in attempts if item["error"]]
+        if errors:
+            coverage[name]["note"] = "; ".join(errors)[:300]
     candidates = []
-    for index in range(limit):
+    for index in range(max((len(rows) for rows in by_source.values()), default=0)):
         for name in selected:
             if index < len(by_source[name]):
                 candidates.append(by_source[name][index])
@@ -323,11 +401,12 @@ def research(theme, sources=None, limit=5, max_pages=20, use_scrapling=False, se
         if entry["status"] == "discovered":
             entry["status"] = "read" if entry["read"] else "discovery_only"
             if name in SOCIAL and not entry["read"]:
-                entry["note"] = "Search index results only; platform content was not verified."
+                entry["note"] = (entry["note"] + " Social post content was not verified.").strip()
     return {
         "theme": theme.strip(),
         "created_at": datetime.now(timezone.utc).isoformat(),
-        "method": backend + " search / Google News RSS; direct page retrieval",
+        "method": backend + " search / Google News RSS" + (" / OpenCLI" if use_opencli else "") + "; direct page retrieval",
+        "depth": depth,
         "coverage": coverage,
         "results": unique,
     }
@@ -337,6 +416,12 @@ def markdown_report(data):
     lines = ["# 調査結果: " + data["theme"], "", "取得日時: " + data["created_at"], "", "## 対象媒体", "", "| 媒体 | 状態 | 発見 | 本文確認 |", "|---|---|---:|---:|"]
     for name, state in data["coverage"].items():
         lines.append("| {} | {} | {} | {} |".format(name, state["status"], state["discovered"], state["read"]))
+    if any(state.get("queries") for state in data["coverage"].values()):
+        lines += ["", "## 実行した検索", ""]
+        for name, state in data["coverage"].items():
+            for item in state.get("queries", []):
+                detail = "失敗: " + item["error"] if item["error"] else "発見: " + str(item["found"])
+                lines.append("- {} / {}: {} — {}".format(name, item["method"], item["query"], detail))
     lines += ["", "## 本文を確認できた資料", ""]
     read = [row for row in data["results"] if row["status"] == "read"]
     if not read:
@@ -347,7 +432,8 @@ def markdown_report(data):
         positions = [compact.lower().find(term.lower()) for term in terms]
         hit = next((position for position in positions if position >= 0), 0)
         excerpt = compact[max(0, hit - 30):hit + 150]
-        lines.extend(["### " + (row.get("page_title") or row["title"]), "", "- 媒体: " + row["source"], "- 出典: " + row["url"], "- 抜粋: " + excerpt, ""])
+        lines.extend(["### " + (row.get("page_title") or row["title"]), "", "- 媒体: " + row["source"],
+                      "- 発見経路: " + row.get("discovery_method", "不明"), "- 出典: " + row["url"], "- 抜粋: " + excerpt, ""])
     lines += ["## 発見のみ（本文未確認）", ""]
     unread = [row for row in data["results"] if row["status"] != "read"]
     if not unread:

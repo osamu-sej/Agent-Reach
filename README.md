@@ -10,11 +10,23 @@ Python 3.9以上で動作します。標準設定はNode.jsの `npx` から固�
 python3 -m reach_research "生成AI 小売業" --limit 5 --output reports/retail-ai
 ```
 
+実行前のローカル診断:
+
+```bash
+python3 -m reach_research --doctor
+```
+
+診断はインストールや設定の有無を示します。各媒体に実際にログインしているか、検索できるかまでは保証しません。
+
 対象を絞る場合:
 
 ```bash
 python3 -m reach_research "生成AI 小売業" --sources web,news,x,reddit,youtube --max-pages 20
 ```
+
+標準の `balanced` は媒体ごとに2つの検索語を実行します。短時間の `--depth quick`、より広い `--depth deep`、追加語句の `--add-query "テーマ 別表記"` も選べます。実行した全検索語と失敗はJSONの `coverage.*.queries` に残ります。`--limit` は検索語ごとの最大発見件数です。
+
+既にOpenCLIとChrome拡張を設定し、ログイン済みセッションをこの調査に使う場合は `--opencli` を指定します。X、Reddit、Instagram、Facebookを媒体内でも検索します。検索結果にURLがない場合は記録できず、投稿本文の検証には公開ページの取得も必要です。このオプションはログインやCookie取得を自動実行しません。
 
 `reports/retail-ai.json` に検索結果、取得状態、本文、エラーを保存し、同名の `.md` に閲覧用の一覧を作ります。`read` はページ本文を抽出できた状態、`discovery_only` は検索結果として見つかっただけの状態です。SNSは検索結果のタイトルと取得本文が対応する場合のみ `read` とします。`read` はテーマとの関連性や記述内容の真偽を保証しません。出力は `.gitignore` で除外されます。
 
@@ -28,7 +40,7 @@ Brave Search APIのキーを `BRAVE_SEARCH_API_KEY` 環境変数に設定する�
 |---|---|---|
 | Web | Exa MCP、Brave Search API（キーあり）、またはBing RSS | 公開HTMLを直接取得 |
 | ニュース | Google News RSS | リンク先に到達できた場合のみ |
-| X、Reddit、YouTube、GitHub、Instagram、Threads、TikTok、Facebook | Exa、Brave、Bingの媒体別検索 | 公開ページから本文を取得できた場合のみ |
+| X、Reddit、YouTube、GitHub、Instagram、Threads、TikTok、Facebook | Exa、Brave、Bingの媒体別検索。X、Reddit、Instagram、Facebookは任意でOpenCLIも利用 | 公開ページから本文を取得できた場合のみ |
 
 媒体別検索では、返されたURLのドメインが対象媒体と一致するか検査します。ログインが必要な投稿や検索エンジンに載らない投稿は漏れます。取得失敗は `coverage` と各資料の `error` に残します。取得済みの検索スニペットを投稿本文として扱いません。リクエストは公開URLに限り、非公開IP、ローカルアドレス、非HTTP URLは拒否します。
 
@@ -42,9 +54,9 @@ Brave Search APIのキーを `BRAVE_SEARCH_API_KEY` 環境変数に設定する�
 
 ## 次の段階
 
-1. テーマから検索語を展開し、期間・地域・言語・除外語を指定できるようにする。
-2. 公式APIや既存のログイン済みセッションを使うSNSコネクタを追加する。
+1. 期間・地域・言語・除外語を指定し、検索語の展開を改善する。
+2. 公式APIや既存のログイン済みセッションを使うSNSコネクタを増やす。
 3. 同一主張の出典突合、日付抽出、引用を備えた要約を追加する。
-4. 収集の予算、重複排除、再実行、差分監視を追加する。
+4. 収集の予算、再実行、差分監視を追加する。
 
-現段階ではログイン済みSNSの直接検索、主張の自動検証、文章要約までは実装していません。
+現段階ではOpenCLIによるSNS検索の実機検証、主張の自動検証、文章要約までは実装していません。
