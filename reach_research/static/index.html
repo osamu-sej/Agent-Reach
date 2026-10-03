@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111c24">
+  <title>Agent-Reach | Web・SNSリサーチ</title>
+  <link rel="stylesheet" href="/assets/style.css">
+  <script src="/assets/app.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="shell header-row">
+      <a class="brand" href="/" aria-label="Agent-Reach ホーム"><span class="brand-icon">◎</span><span>Agent<span class="brand-light">-Reach</span></span></a>
+      <div class="header-actions">
+        <span class="header-note">出典を追える調査ワークスペース</span>
+        <button class="ghost-button" id="access-toggle" type="button" aria-expanded="false" aria-controls="access-panel">アクセスキー</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="hero" aria-labelledby="page-title">
+      <div class="eyebrow"><span class="eyebrow-line"></span> RESEARCH WORKSPACE <span class="eyebrow-line"></span></div>
+      <h1 id="page-title">調べたいテーマから、<br><em>情報の全体像</em>へ。</h1>
+      <p>WebとSNSを横断して資料を探し、本文を確認できた情報と検索で見つけただけの情報を分けて整理します。</p>
+    </section>
+
+    <section id="access-panel" class="access-panel" hidden>
+      <label for="access-token">アクセスキー</label>
+      <div class="access-row"><input id="access-token" type="password" autocomplete="off" placeholder="公開環境で設定したキー"><button class="secondary-button" id="access-save" type="button">保存</button></div>
+      <p>このブラウザのタブ内で保持します。調査APIの認証にだけ使用します。</p>
+    </section>
+
+    <div class="workspace-grid">
+      <section class="panel setup-panel" aria-labelledby="setup-title">
+        <div class="section-heading"><span class="section-number">01</span><div><p class="overline">SET UP</p><h2 id="setup-title">調査を設計する</h2></div></div>
+        <form id="research-form">
+          <div class="field"><label for="theme">調査テーマ <span class="required">必須</span></label><textarea id="theme" name="theme" rows="3" maxlength="200" required placeholder="例：日本の小売業における生成AI活用"></textarea><p class="field-hint">製品名、業界、課題などを具体的に書くと探しやすくなります。</p></div>
+
+          <fieldset class="source-field"><legend>対象媒体 <span id="source-count" class="count-pill">10媒体</span></legend><div id="sources" class="source-grid"></div><div class="source-actions"><button type="button" id="select-all">すべて選択</button><button type="button" id="select-none">選択解除</button></div></fieldset>
+
+          <div class="settings-grid">
+            <div class="field"><label for="depth">調査の深さ</label><select id="depth" name="depth"><option value="quick">クイック · 1観点</option><option value="balanced" selected>標準 · 2観点</option><option value="deep">詳細 · 複数観点</option></select></div>
+            <div class="field"><label for="limit">観点ごとの発見件数</label><select id="limit" name="limit"><option value="2">2件</option><option value="3" selected>3件</option><option value="5">5件</option><option value="10">10件</option></select></div>
+          </div>
+          <label class="option-row"><input type="checkbox" id="scrapling"><span><strong>Scraplingで本文を取得</strong><small id="scrapling-note">利用可能な場合に選択できます</small></span></label>
+          <button class="primary-button" id="submit-button" type="submit"><span>調査を開始</span><span aria-hidden="true">↗</span></button>
+          <p class="submit-note">ログインが必要な投稿や取得に失敗した資料は、その状態を結果に明示します。</p>
+        </form>
+      </section>
+
+      <section class="panel output-panel" aria-labelledby="output-title">
+        <div class="section-heading"><span class="section-number">02</span><div><p class="overline">RESULTS</p><h2 id="output-title">調査結果</h2></div></div>
+        <div id="empty-state" class="empty-state"><div class="empty-symbol" aria-hidden="true">⌕</div><h3>調査結果はここに表示されます</h3><p>左側でテーマと対象媒体を設定し、調査を開始してください。</p><div class="empty-steps"><span>テーマを指定</span><span aria-hidden="true">→</span><span>媒体を選択</span><span aria-hidden="true">→</span><span>出典を確認</span></div></div>
+        <div id="job-state" class="job-state" hidden aria-live="polite"><div class="spinner" aria-hidden="true"></div><div><h3 id="job-title">調査を準備しています</h3><p id="job-detail">対象媒体から情報を集めています。</p></div></div>
+        <div id="result-state" hidden>
+          <div class="result-summary"><div><p class="overline">RESEARCH COMPLETE</p><h3 id="result-theme"></h3><p id="result-meta"></p></div><div class="summary-counts"><div><strong id="count-found">0</strong><span>発見</span></div><div><strong id="count-read">0</strong><span>本文確認</span></div></div></div>
+          <div class="result-actions"><button class="secondary-button" id="download-md" type="button">レポートを保存 .md</button><button class="text-button" id="download-json" type="button">データを保存 .json</button></div>
+          <h4 class="subheading">媒体ごとの到達状況</h4><div id="coverage" class="coverage-list"></div>
+          <div class="evidence-heading"><h4 class="subheading">資料一覧</h4><div class="filter-tabs" role="group" aria-label="資料の絞り込み"><button type="button" data-filter="all" class="active">すべて</button><button type="button" data-filter="read">本文確認</button><button type="button" data-filter="discovery_only">発見のみ</button></div></div>
+          <div id="evidence" class="evidence-list"></div>
+        </div>
+        <div id="error-state" class="error-state" hidden role="alert"><strong>調査を完了できませんでした</strong><p id="error-detail"></p></div>
+      </section>
+    </div>
+
+    <footer class="footer"><span>Agent-Reach</span><span>検索結果だけでは投稿本文を確認したことにはなりません。</span></footer>
+  </main>
+</body>
+</html>

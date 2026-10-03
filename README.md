@@ -6,6 +6,25 @@
 
 Python 3.9以上で動作します。標準設定はNode.jsの `npx` から固定版の `mcporter` を起動し、Agent Reachも採用する公開Exa MCPで検索します。初回にnpmパッケージを取得します。Node.jsがない環境ではBing RSSに切り替わります。
 
+### ブラウザで使う
+
+Python 3.10以上の仮想環境を作り、Web画面の依存を追加します。Scraplingも使用する場合は次のコマンドです。
+
+```bash
+.tools/uv pip install --python .venv312/bin/python -e '.[web,scrapling]'
+.venv312/bin/reach-research-web
+```
+
+このMacのブラウザで `http://127.0.0.1:8000/` を開きます。テーマ、対象媒体、調査の深さを選び、調査を開始できます。完了すると資料のURLと本文確認状況を表示し、MarkdownレポートとJSONデータを保存できます。レポートはローカルの `reports/web/` にも保存されます。ポートを変える場合は `PORT=8080 .venv312/bin/reach-research-web` のように指定します。
+
+外部ネットワークから開く場合は、認証キーを設定してから `HOST=0.0.0.0` を指定してください。公開URLへの配置には別途サーバーとHTTPSの設定が必要です。
+
+```bash
+APP_ACCESS_TOKEN='長いランダムなキー' HOST=0.0.0.0 .venv312/bin/reach-research-web
+```
+
+Web画面は公開資料の検索と取得だけを実行します。ローカルCLIで利用できるOpenCLIのログイン済みセッション、`gh`、`yt-dlp` はWeb画面から呼び出しません。調査ジョブは実行プロセスのメモリに保持するため、再起動すると画面からのジョブ参照は失われます。保存済みファイルは `reports/web/` に残ります。
+
 ```bash
 python3 -m reach_research "生成AI 小売業" --limit 5 --output reports/retail-ai
 ```
