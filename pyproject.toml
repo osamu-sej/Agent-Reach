@@ -10,7 +10,7 @@ requires-python = ">=3.9"
 dependencies = []
 
 [project.optional-dependencies]
-scrapling = ["scrapling>=0.3; python_version >= '3.10'"]
+scrapling = ["scrapling[fetchers]>=0.4.15; python_version >= '3.10'"]
 
 [project.scripts]
 reach-research = "reach_research.cli:main"

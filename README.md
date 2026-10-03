@@ -34,6 +34,22 @@ GitHub CLI (`gh`) がある場合はリポジトリ検索を、`yt-dlp` があ�
 
 Scraplingの通常Fetcherを使う場合は、Python 3.10以上の環境で `pip install -e '.[scrapling]'` を実行し、`--scrapling` を付けます。基本機能はPython 3.9でも動きます。ログイン突破、CAPTCHA解決、プロキシ切替はこのオプションに含めていません。
 
+### MacでPython 3.12を使う
+
+既存のシステムPythonを変更せず、このリポジトリ専用の環境を作れます。リポジトリのルートで実行してください。
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh -o /tmp/agent-reach-uv-install.sh
+env UV_UNMANAGED_INSTALL="$PWD/.tools" sh /tmp/agent-reach-uv-install.sh
+.tools/uv python install 3.12
+.tools/uv venv --python 3.12 .venv312
+.tools/uv pip install --python .venv312/bin/python -e '.[scrapling]'
+.venv312/bin/python --version
+.venv312/bin/reach-research --doctor
+```
+
+この手順では `python3` の既定値は変わりません。Agent-ReachをPython 3.12で動かすときは `.venv312/bin/reach-research` を使います。ページ側のTLS証明書エラーなどで取得が失敗した場合、その資料は `discovery_only` として残ります。
+
 Brave Search APIのキーを `BRAVE_SEARCH_API_KEY` 環境変数に設定すると、優先してBraveを使います。`--search-backend exa|brave|bing` で明示的に選択できます。Bingの無関係な結果はタイトルとスニペットで除外します。外部検索サービスの利用料金・上限は各サービスの条件に従います。
 
 ## 現在の収集経路
