@@ -265,17 +265,38 @@ def opencli_search(source, query, limit):
         return []
     if not shutil.which("opencli"):
         raise ValueError("OpenCLI is not installed")
-    command = ["opencli", OPENCLI_SITES[source], "search", query, "-f", "yaml"]
-    process = subprocess.run(command, capture_output=True, text=True, timeout=35, check=False)
+    command = ["opencli", OPENCLI_SITES[source], "search", query, "--limit", str(limit), "-f", "json"]
+    process = subprocess.run(command, capture_output=True, text=True, timeout=70, check=False)
     if process.returncode:
         raise ValueError("OpenCLI search failed: " + process.stderr[:150])
     found = []
     seen = set()
-    for match in re.findall(r"https?://[^\s<>\"']+", process.stdout):
-        url = canonical_url(match.rstrip(",;)]}"))
-        if url and url not in seen and source_url_matches(source, url):
-            found.append({"title": url, "url": url, "snippet": "", "published": "", "discovery_method": "opencli"})
-            seen.add(url)
+    try:
+        payload = json.loads(process.stdout)
+    except json.JSONDecodeError as exc:
+        raise ValueError("OpenCLI did not return JSON") from exc
+
+    def visit(value):
+        if isinstance(value, list):
+            for item in value:
+                visit(item)
+        elif isinstance(value, dict):
+            url = canonical_url(str(value.get("url") or value.get("tweet_url") or value.get("link") or ""))
+            if url and url not in seen and source_url_matches(source, url):
+                body = str(value.get("text") or value.get("full_text") or value.get("content") or "")
+                title = str(value.get("title") or (body.splitlines()[0][:160] if body else url))
+                verified = (source == "x" and bool(re.search(r"/status/\d+", url))
+                            and len(body.strip()) >= 5)
+                found.append({"title": title, "url": url, "snippet": body[:300],
+                              "published": str(value.get("created_at") or value.get("date") or ""),
+                              "discovery_method": "opencli", "text": body if verified else "",
+                              "status": "read" if verified else "discovery_only"})
+                seen.add(url)
+            for item in value.values():
+                if isinstance(item, (list, dict)):
+                    visit(item)
+
+    visit(payload)
     return found[:limit]
 
 
@@ -431,7 +452,7 @@ def confirms_social_post(row, body):
 
 def research(theme, sources=None, limit=5, max_pages=20, use_scrapling=False,
              search_backend="auto", depth="balanced", extra_queries=None,
-             use_opencli=False, use_direct=True):
+             use_opencli=False, use_direct=True, opencli_sources=None):
     if not theme or not theme.strip():
         raise ValueError("theme is required")
     if use_scrapling and sys.version_info < (3, 10):
@@ -450,7 +471,9 @@ def research(theme, sources=None, limit=5, max_pages=20, use_scrapling=False,
     discovered = []
     tasks = []
     if use_opencli:
-        tasks.extend((name, query, "opencli") for name in selected if name in OPENCLI_SITES for query in plans[name])
+        allowed_opencli = set(opencli_sources) if opencli_sources is not None else set(OPENCLI_SITES)
+        tasks.extend((name, query, "opencli") for name in selected
+                     if name in OPENCLI_SITES and name in allowed_opencli for query in plans[name])
     if use_direct:
         tasks.extend((name, query, "direct") for name in selected if name in DIRECT_TOOLS
                      and shutil.which(DIRECT_TOOLS[name]) for query in plans[name])
@@ -491,8 +514,9 @@ def research(theme, sources=None, limit=5, max_pages=20, use_scrapling=False,
         key = (result["source"], clean)
         if clean and key not in seen:
             result["url"] = clean
-            result["status"] = "discovery_only"
-            result["text"] = ""
+            if result.get("discovery_method") != "opencli" or result.get("status") != "read":
+                result["status"] = "discovery_only"
+                result["text"] = ""
             result["error"] = ""
             seen.add(key)
             unique.append(result)
@@ -510,8 +534,12 @@ def research(theme, sources=None, limit=5, max_pages=20, use_scrapling=False,
         errors = [item["error"] for item in attempts if item["error"]]
         if errors:
             coverage[name]["note"] = "; ".join(errors)[:300]
+        coverage[name]["read"] = sum(row["status"] == "read" for row in rows)
         if name == "x":
-            coverage[name]["note"] = ("無料の公開Web検索でX投稿を探しました。X内の全投稿は対象外です。 "
+            route_note = ("このMacのOpenCLI検索と公開Web検索を併用しました。" if
+                          any(item["method"] == "opencli" and not item["error"] for item in attempts) else
+                          "無料の公開Web検索でX投稿を探しました。")
+            coverage[name]["note"] = (route_note + " X内の全投稿は対象外です。 "
                                       + coverage[name]["note"]).strip()
     candidates = []
     for index in range(max((len(rows) for rows in by_source.values()), default=0)):

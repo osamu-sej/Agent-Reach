@@ -41,11 +41,28 @@ class CoreTests(unittest.TestCase):
         self.assertIn("生成AI 小売業 課題 批判", plan_queries("生成AI 小売業", "web", "deep"))
 
     def test_opencli_results_keep_only_the_requested_platform(self):
-        output = "url: https://x.com/example/status/123\nurl: https://example.com/other\n"
+        output = '{"data":[{"url":"https://x.com/example/status/123","text":"投稿本文です"},' \
+                 '{"url":"https://example.com/other","text":"無関係"}]}'
         with patch("reach_research.core.shutil.which", return_value="/usr/bin/opencli"), \
              patch("reach_research.core.subprocess.run", return_value=SimpleNamespace(returncode=0, stdout=output, stderr="")):
             rows = opencli_search("x", "topic", 5)
         self.assertEqual([row["url"] for row in rows], ["https://x.com/example/status/123"])
+        self.assertEqual(rows[0]["snippet"], "投稿本文です")
+        self.assertEqual(rows[0]["status"], "read")
+
+    def test_local_x_search_keeps_browser_verified_text(self):
+        row = {"title": "投稿本文", "url": "https://x.com/i/status/123", "snippet": "投稿本文",
+               "published": "", "text": "投稿本文", "status": "read", "discovery_method": "opencli"}
+        with patch("reach_research.core.opencli_search", return_value=[row]) as opencli, \
+             patch("reach_research.core.yahoo_x_search", return_value=[]), \
+             patch("reach_research.core.search_source", return_value=[]), \
+             patch("reach_research.core.read_page") as read:
+            result = research("商品", sources=["x"], depth="quick", use_opencli=True,
+                              use_direct=False, opencli_sources=("x",))
+        self.assertEqual(opencli.call_count, 1)
+        self.assertEqual(result["coverage"]["x"]["read"], 1)
+        self.assertEqual(result["results"][0]["discovery_method"], "opencli")
+        read.assert_not_called()
 
     def test_native_github_search_is_read_only(self):
         output = '[{"name":"demo","description":"Example","url":"https://github.com/a/demo"}]'

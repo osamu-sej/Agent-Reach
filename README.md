@@ -23,11 +23,17 @@ Python 3.10以上の仮想環境を作り、Web画面の依存を追加します
 APP_ACCESS_TOKEN='長いランダムなキー' HOST=0.0.0.0 .venv312/bin/reach-research-web
 ```
 
-Web画面は公開資料の検索と取得だけを実行します。ローカルCLIで利用できるOpenCLIのログイン済みセッション、`gh`、`yt-dlp` はWeb画面から呼び出しません。調査ジョブは実行プロセスのメモリに保持するため、再起動すると画面からのジョブ参照は失われます。保存済みファイルは `reports/web/` に残ります。
+通常のWeb画面は公開資料の検索と取得を実行します。`gh`、`yt-dlp` はWeb画面から呼び出しません。調査ジョブは実行プロセスのメモリに保持するため、再起動すると画面からのジョブ参照は失われます。保存済みファイルは `reports/web/` に残ります。
+
+元のAgent-Reachと同じログイン済みブラウザ経由のX検索をローカルWeb画面で試す場合は、[OpenCLI](https://github.com/jackwener/opencli) とBrowser BridgeをこのMacに設定し、ChromeでXへログインしたうえで次のように起動します。検索はXのみにOpenCLIを使い、公開Web検索も併用します。OpenCLIが未導入なら起動前に設定してください。このモードは `127.0.0.1` または `::1` からのアクセスだけで有効になり、Renderでは常に無効です。WebアプリはCookieを読み出したりRenderに送ったりしません。
+
+```bash
+REACH_LOCAL_X_SEARCH=1 .venv312/bin/reach-research-web
+```
 
 Xは無料の公開Web検索（Yahoo! JAPAN、Exa、Bing）で投稿URLを探します。見つかった公開投稿のページに本文メタ情報がある場合だけ、本文確認済みとします。X Developerアカウントや有料APIは不要です。検索エンジンに掲載されない投稿、ログインが必要な投稿、削除された投稿は取得できません。0件はX上に投稿が存在しないことを意味しません。
 
-画面右上の `v0.4.0 · コミット番号` で、Renderが現在配信している版を確認できます。更新後はページを再読み込みしてください。
+画面右上の `v0.4.1 · コミット番号` で、Renderが現在配信している版を確認できます。更新後はページを再読み込みしてください。
 
 ### 外出先から使う
 
@@ -55,7 +61,7 @@ python3 -m reach_research "生成AI 小売業" --sources web,news,x,reddit,youtu
 
 標準の `balanced` は媒体ごとに2つの検索語を実行します。短時間の `--depth quick`、より広い `--depth deep`、追加語句の `--add-query "テーマ 別表記"` も選べます。実行した全検索語と失敗はJSONの `coverage.*.queries` に残ります。`--limit` は検索語ごとの最大発見件数です。
 
-既にOpenCLIとChrome拡張を設定し、ログイン済みセッションをこの調査に使う場合は `--opencli` を指定します。X、Reddit、Instagram、Facebookを媒体内でも検索します。検索結果にURLがない場合は記録できず、投稿本文の検証には公開ページの取得も必要です。このオプションはログインやCookie取得を自動実行しません。
+既にOpenCLIとChrome拡張を設定し、ログイン済みセッションをこの調査に使う場合は `--opencli` を指定します。X、Reddit、Instagram、Facebookを媒体内でも検索します。検索結果にURLがない場合は記録できません。X投稿の本文がOpenCLIから取得できた場合はその本文を記録し、それ以外は公開ページからの取得を試みます。このオプションはログインやCookie取得を自動実行しません。
 
 GitHub CLI (`gh`) がある場合はリポジトリ検索を、`yt-dlp` がある場合はYouTube検索を、標準で併用します。どちらも読み取り専用です。`--no-direct` で停止できます。直接検索もタイトル・URLの発見であり、本文の取得状態とは分けて記録します。
 
@@ -87,7 +93,7 @@ Brave Search APIのキーを `BRAVE_SEARCH_API_KEY` 環境変数に設定する�
 |---|---|---|
 | Web | Exa MCP、Brave Search API（キーあり）、またはBing RSS | 公開HTMLを直接取得 |
 | ニュース | Google News RSS | リンク先に到達できた場合のみ |
-| X | Yahoo! JAPAN、Exa、Brave（キーあり）、Bingの公開Web検索。CLIでは任意でOpenCLIも利用 | 公開投稿ページのメタ情報から投稿本文を取得できた場合 |
+| X | Yahoo! JAPAN、Exa、Brave（キーあり）、Bingの公開Web検索。ローカルでは任意でOpenCLIも利用 | 公開投稿ページのメタ情報、またはログイン済みブラウザ経由のOpenCLIから投稿本文を取得できた場合 |
 | Reddit、YouTube、GitHub、Instagram、Threads、TikTok、Facebook | Exa、Brave、Bingの媒体別検索。GitHubは`gh`、YouTubeは`yt-dlp`を併用。Reddit、Instagram、Facebookは任意でOpenCLIも利用 | 公開ページから本文を取得できた場合のみ |
 
 媒体別検索では、返されたURLのドメインが対象媒体と一致するか検査します。ログインが必要な投稿や検索エンジンに載らない投稿は漏れます。取得失敗は `coverage` と各資料の `error` に残します。取得済みの検索スニペットを投稿本文として扱いません。リクエストは公開URLに限り、非公開IP、ローカルアドレス、非HTTP URLは拒否します。
@@ -107,4 +113,4 @@ Brave Search APIのキーを `BRAVE_SEARCH_API_KEY` 環境変数に設定する�
 3. 同一主張の出典突合、日付抽出、引用を備えた要約を追加する。
 4. 収集の予算、再実行、差分監視を追加する。
 
-現段階ではOpenCLIによるSNS検索の実機検証、主張の自動検証、文章要約までは実装していません。
+現段階ではOpenCLIによるXログイン済み検索の実機検証、主張の自動検証、文章要約は完了していません。

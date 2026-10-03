@@ -6,10 +6,11 @@ import json
 import os
 from pathlib import Path
 import secrets
+import shutil
 from threading import Lock
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -39,7 +40,7 @@ class JobStore:
         self.jobs = {}
         self.executor = ThreadPoolExecutor(max_workers=MAX_ACTIVE, thread_name_prefix="reach-web")
 
-    def submit(self, request):
+    def submit(self, request, use_local_x=False):
         with self.lock:
             active = sum(job["status"] in ("queued", "running") for job in self.jobs.values())
             if active >= MAX_ACTIVE:
@@ -52,16 +53,17 @@ class JobStore:
                    "created_at": datetime.now(timezone.utc).isoformat(), "finished_at": None,
                    "error": None, "result": None}
             self.jobs[job_id] = job
-        self.executor.submit(self._run, job_id, request)
+        self.executor.submit(self._run, job_id, request, use_local_x)
         return self.public(job_id)
 
-    def _run(self, job_id, request):
+    def _run(self, job_id, request, use_local_x=False):
         with self.lock:
             self.jobs[job_id]["status"] = "running"
         try:
             data = research(request.theme.strip(), request.sources, request.limit,
                             request.max_pages, request.use_scrapling, depth=request.depth,
-                            use_opencli=False, use_direct=False)
+                            use_opencli=use_local_x, use_direct=False,
+                            opencli_sources=("x",) if use_local_x else None)
             REPORT_DIR.mkdir(parents=True, exist_ok=True)
             json_path = REPORT_DIR / (job_id + ".json")
             md_path = REPORT_DIR / (job_id + ".md")
@@ -103,6 +105,13 @@ def require_token(authorization: str = Header(default="")):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="アクセスキーを入力してください。")
 
 
+def local_x_enabled(client_host):
+    """Keep authenticated browser search on this computer only."""
+    return (os.environ.get("REACH_LOCAL_X_SEARCH") == "1" and
+            not os.environ.get("RENDER") and client_host in ("127.0.0.1", "::1") and
+            bool(shutil.which("opencli")))
+
+
 @app.get("/", include_in_schema=False)
 def home():
     return FileResponse(STATIC_DIR / "index.html", headers={"Cache-Control": "no-store"})
@@ -120,19 +129,20 @@ def version():
 
 
 @app.get("/api/capabilities", dependencies=[Depends(require_token)])
-def capabilities():
-    return {"sources": list(SOURCES), "diagnostics": diagnostics(), "max_active": MAX_ACTIVE}
+def capabilities(request: Request):
+    return {"sources": list(SOURCES), "diagnostics": diagnostics(), "max_active": MAX_ACTIVE,
+            "local_x_enabled": local_x_enabled(request.client.host if request.client else "")}
 
 
 @app.post("/api/research", status_code=202, dependencies=[Depends(require_token)])
-def create_research(request: ResearchRequest):
-    if request.depth not in ("quick", "balanced", "deep"):
+def create_research(payload: ResearchRequest, request: Request):
+    if payload.depth not in ("quick", "balanced", "deep"):
         raise HTTPException(status_code=422, detail="調査の深さが不正です。")
-    if any(source not in SOURCES for source in request.sources):
+    if any(source not in SOURCES for source in payload.sources):
         raise HTTPException(status_code=422, detail="対象媒体が不正です。")
-    if request.use_scrapling and not diagnostics()["scrapling_installed"]:
+    if payload.use_scrapling and not diagnostics()["scrapling_installed"]:
         raise HTTPException(status_code=422, detail="Scraplingがインストールされていません。")
-    return store.submit(request)
+    return store.submit(payload, use_local_x=local_x_enabled(request.client.host if request.client else ""))
 
 
 @app.get("/api/jobs/{job_id}", dependencies=[Depends(require_token)])
