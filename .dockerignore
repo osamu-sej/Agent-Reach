@@ -1,0 +1,9 @@
+.git
+.tools
+.venv
+.venv312
+reports
+tests
+*.egg-info
+__pycache__
+*.pyc

@@ -25,6 +25,12 @@ APP_ACCESS_TOKEN='長いランダムなキー' HOST=0.0.0.0 .venv312/bin/reach-r
 
 Web画面は公開資料の検索と取得だけを実行します。ローカルCLIで利用できるOpenCLIのログイン済みセッション、`gh`、`yt-dlp` はWeb画面から呼び出しません。調査ジョブは実行プロセスのメモリに保持するため、再起動すると画面からのジョブ参照は失われます。保存済みファイルは `reports/web/` に残ります。
 
+### 外出先から使う
+
+`render.yaml` はRenderの無料Webサービスを定義しています。Render Dashboardの **New → Blueprint** でこのリポジトリの `main` を選ぶと、DockerfileからPython 3.12とNode.jsを備えたWebアプリを配置できます。公開URLはHTTPSの `onrender.com` サブドメインです。Renderが生成する `APP_ACCESS_TOKEN` をDashboardのEnvironmentで確認し、Web画面の「アクセスキー」に入力してください。キーはリポジトリに保存しません。
+
+無料インスタンスは一定時間操作がないと停止し、次回アクセス時に起動します。調査ジョブと保存済みレポートはインスタンスの再起動・再配置時に失われます。必要なレポートはその都度MarkdownまたはJSONでダウンロードしてください。
+
 ```bash
 python3 -m reach_research "生成AI 小売業" --limit 5 --output reports/retail-ai
 ```

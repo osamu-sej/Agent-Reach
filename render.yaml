@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: agent-reach-research
+    runtime: docker
+    plan: free
+    region: singapore
+    branch: main
+    autoDeployTrigger: commit
+    healthCheckPath: /healthz
+    envVars:
+      - key: APP_ACCESS_TOKEN
+        generateValue: true

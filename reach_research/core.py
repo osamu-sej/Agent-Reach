@@ -250,9 +250,12 @@ def brave_search(query, limit):
 
 
 def exa_search(query, limit):
-    if not shutil.which("npx"):
-        raise ValueError("Exa search needs Node.js/npx")
-    command = ["npx", "-y", "mcporter@0.14.2", "call", "https://mcp.exa.ai/mcp.web_search_exa",
+    mcporter = shutil.which("mcporter")
+    npx = shutil.which("npx")
+    if not mcporter and not npx:
+        raise ValueError("Exa search needs mcporter or Node.js/npx")
+    command = ([mcporter] if mcporter else [npx, "-y", "mcporter@0.14.2"]) + [
+               "call", "https://mcp.exa.ai/mcp.web_search_exa",
                "--args", json.dumps({"query": query, "numResults": limit,
                                       "objective": "Find pages directly relevant to this topic; return their original URLs."}),
                "--output", "json", "--timeout", "20000"]
@@ -281,7 +284,7 @@ def select_backend(requested):
         return requested
     if os.environ.get("BRAVE_SEARCH_API_KEY"):
         return "brave"
-    if shutil.which("npx"):
+    if shutil.which("mcporter") or shutil.which("npx"):
         return "exa"
     return "bing"
 
@@ -290,7 +293,7 @@ def diagnostics():
     """Local capability inventory; availability does not assert live access."""
     return {
         "search_backend_default": select_backend("auto"),
-        "exa_npx_available": bool(shutil.which("npx")),
+        "exa_npx_available": bool(shutil.which("mcporter") or shutil.which("npx")),
         "brave_key_configured": bool(os.environ.get("BRAVE_SEARCH_API_KEY")),
         "opencli_installed": bool(shutil.which("opencli")),
         "github_cli_installed": bool(shutil.which("gh")),
