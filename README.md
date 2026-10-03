@@ -28,9 +28,11 @@ python3 -m reach_research "生成AI 小売業" --sources web,news,x,reddit,youtu
 
 既にOpenCLIとChrome拡張を設定し、ログイン済みセッションをこの調査に使う場合は `--opencli` を指定します。X、Reddit、Instagram、Facebookを媒体内でも検索します。検索結果にURLがない場合は記録できず、投稿本文の検証には公開ページの取得も必要です。このオプションはログインやCookie取得を自動実行しません。
 
+GitHub CLI (`gh`) がある場合はリポジトリ検索を、`yt-dlp` がある場合はYouTube検索を、標準で併用します。どちらも読み取り専用です。`--no-direct` で停止できます。直接検索もタイトル・URLの発見であり、本文の取得状態とは分けて記録します。
+
 `reports/retail-ai.json` に検索結果、取得状態、本文、エラーを保存し、同名の `.md` に閲覧用の一覧を作ります。`read` はページ本文を抽出できた状態、`discovery_only` は検索結果として見つかっただけの状態です。SNSは検索結果のタイトルと取得本文が対応する場合のみ `read` とします。`read` はテーマとの関連性や記述内容の真偽を保証しません。出力は `.gitignore` で除外されます。
 
-Scraplingの通常Fetcherを使う場合は、別途 `pip install -e '.[scrapling]'` で導入して `--scrapling` を付けます。ログイン突破、CAPTCHA解決、プロキシ切替はこのオプションに含めていません。
+Scraplingの通常Fetcherを使う場合は、Python 3.10以上の環境で `pip install -e '.[scrapling]'` を実行し、`--scrapling` を付けます。基本機能はPython 3.9でも動きます。ログイン突破、CAPTCHA解決、プロキシ切替はこのオプションに含めていません。
 
 Brave Search APIのキーを `BRAVE_SEARCH_API_KEY` 環境変数に設定すると、優先してBraveを使います。`--search-backend exa|brave|bing` で明示的に選択できます。Bingの無関係な結果はタイトルとスニペットで除外します。外部検索サービスの利用料金・上限は各サービスの条件に従います。
 
@@ -40,7 +42,7 @@ Brave Search APIのキーを `BRAVE_SEARCH_API_KEY` 環境変数に設定する�
 |---|---|---|
 | Web | Exa MCP、Brave Search API（キーあり）、またはBing RSS | 公開HTMLを直接取得 |
 | ニュース | Google News RSS | リンク先に到達できた場合のみ |
-| X、Reddit、YouTube、GitHub、Instagram、Threads、TikTok、Facebook | Exa、Brave、Bingの媒体別検索。X、Reddit、Instagram、Facebookは任意でOpenCLIも利用 | 公開ページから本文を取得できた場合のみ |
+| X、Reddit、YouTube、GitHub、Instagram、Threads、TikTok、Facebook | Exa、Brave、Bingの媒体別検索。GitHubは`gh`、YouTubeは`yt-dlp`を併用。X、Reddit、Instagram、Facebookは任意でOpenCLIも利用 | 公開ページから本文を取得できた場合のみ |
 
 媒体別検索では、返されたURLのドメインが対象媒体と一致するか検査します。ログインが必要な投稿や検索エンジンに載らない投稿は漏れます。取得失敗は `coverage` と各資料の `error` に残します。取得済みの検索スニペットを投稿本文として扱いません。リクエストは公開URLに限り、非公開IP、ローカルアドレス、非HTTP URLは拒否します。
 

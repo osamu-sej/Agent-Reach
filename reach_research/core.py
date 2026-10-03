@@ -11,6 +11,7 @@ import re
 import shutil
 import socket
 import subprocess
+import sys
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -34,6 +35,7 @@ SOURCES = {
 SOCIAL = set(SOURCES) - {"web", "news"}
 SOCIAL_PAGES = SOCIAL - {"github"}
 OPENCLI_SITES = {"x": "twitter", "reddit": "reddit", "instagram": "instagram", "facebook": "facebook"}
+DIRECT_TOOLS = {"github": "gh", "youtube": "yt-dlp"}
 SOURCE_HOSTS = {
     "x": ("x.com", "twitter.com"),
     "reddit": ("reddit.com",),
@@ -206,6 +208,37 @@ def opencli_search(source, query, limit):
     return found[:limit]
 
 
+def direct_search(source, query, limit):
+    """Read-only native searches for GitHub repositories and YouTube videos."""
+    if source not in DIRECT_TOOLS or not shutil.which(DIRECT_TOOLS[source]):
+        return []
+    if source == "github":
+        command = ["gh", "search", "repos", query, "--limit", str(limit), "--json", "name,description,url"]
+        process = subprocess.run(command, capture_output=True, text=True, timeout=25, check=False)
+        if process.returncode:
+            raise ValueError("GitHub search failed: " + process.stderr[:150])
+        items = json.loads(process.stdout)
+        return [{"title": item.get("name", ""), "url": item.get("url", ""),
+                 "snippet": item.get("description") or "", "published": "",
+                 "discovery_method": "gh"} for item in items]
+    command = ["yt-dlp", "--dump-json", "--skip-download", "ytsearch{}:{}".format(limit, query)]
+    process = subprocess.run(command, capture_output=True, text=True, timeout=45, check=False)
+    if process.returncode and not process.stdout.strip():
+        raise ValueError("YouTube search failed: " + process.stderr[:150])
+    found = []
+    for line in process.stdout.splitlines():
+        item = json.loads(line)
+        url = item.get("webpage_url") or item.get("url") or ""
+        if not url.startswith("http") and item.get("id"):
+            url = "https://www.youtube.com/watch?v=" + item["id"]
+        if source_url_matches("youtube", url):
+            found.append({"title": item.get("title", ""), "url": url,
+                          "snippet": (item.get("description") or "")[:300],
+                          "published": item.get("upload_date") or "",
+                          "discovery_method": "yt-dlp"})
+    return found[:limit]
+
+
 def brave_search(query, limit):
     api_key = os.environ["BRAVE_SEARCH_API_KEY"]
     url = "https://api.search.brave.com/res/v1/web/search?" + urlencode({"q": query, "count": limit})
@@ -260,6 +293,8 @@ def diagnostics():
         "exa_npx_available": bool(shutil.which("npx")),
         "brave_key_configured": bool(os.environ.get("BRAVE_SEARCH_API_KEY")),
         "opencli_installed": bool(shutil.which("opencli")),
+        "github_cli_installed": bool(shutil.which("gh")),
+        "youtube_cli_installed": bool(shutil.which("yt-dlp")),
         "scrapling_installed": find_spec("scrapling") is not None,
         "note": "Installed or configured does not prove login, quota, or live platform access.",
     }
@@ -291,12 +326,11 @@ def read_page(url, use_scrapling=False):
         raise ValueError("non-public or invalid URL")
     if use_scrapling:
         from scrapling.fetchers import Fetcher
-        page = Fetcher.fetch(clean, timeout=12000)
+        page = Fetcher.get(clean, timeout=12)
         status = getattr(page, "status", 200)
         if status >= 400:
             raise ValueError("HTTP " + str(status))
-        raw = str(page.html_content).encode("utf-8")
-        return extract_html(raw)
+        return extract_html(page.body)
     raw, content_type, _ = download(clean)
     if content_type not in ("text/html", "application/xhtml+xml"):
         raise ValueError("unsupported content type: " + content_type)
@@ -314,9 +348,12 @@ def confirms_social_post(row, body):
 
 
 def research(theme, sources=None, limit=5, max_pages=20, use_scrapling=False,
-             search_backend="auto", depth="balanced", extra_queries=None, use_opencli=False):
+             search_backend="auto", depth="balanced", extra_queries=None,
+             use_opencli=False, use_direct=True):
     if not theme or not theme.strip():
         raise ValueError("theme is required")
+    if use_scrapling and sys.version_info < (3, 10):
+        raise ValueError("Scrapling requires Python 3.10 or newer")
     if not 1 <= limit <= 20 or not 0 <= max_pages <= 100:
         raise ValueError("limit must be 1-20 and max_pages must be 0-100")
     selected = list(dict.fromkeys(sources or SOURCES))
@@ -329,14 +366,24 @@ def research(theme, sources=None, limit=5, max_pages=20, use_scrapling=False,
     plans = {name: plan_queries(theme, name, depth, extra_queries) for name in selected}
     coverage = {name: {"status": "pending", "discovered": 0, "read": 0, "note": "", "queries": []} for name in selected}
     discovered = []
-    tasks = [(name, query, "index") for name in selected for query in plans[name]]
+    tasks = []
     if use_opencli:
         tasks.extend((name, query, "opencli") for name in selected if name in OPENCLI_SITES for query in plans[name])
+    if use_direct:
+        tasks.extend((name, query, "direct") for name in selected if name in DIRECT_TOOLS
+                     and shutil.which(DIRECT_TOOLS[name]) for query in plans[name])
+    tasks.extend((name, query, "index") for name in selected for query in plans[name])
     completed = {}
     with ThreadPoolExecutor(max_workers=min(2 if backend == "exa" else 6, len(tasks) or 1)) as pool:
-        futures = {pool.submit(opencli_search if method == "opencli" else search_source,
-                               name, query, limit, *(() if method == "opencli" else (backend,))): index
-                   for index, (name, query, method) in enumerate(tasks)}
+        futures = {}
+        for index, (name, query, method) in enumerate(tasks):
+            if method == "opencli":
+                future = pool.submit(opencli_search, name, query, limit)
+            elif method == "direct":
+                future = pool.submit(direct_search, name, query, limit)
+            else:
+                future = pool.submit(search_source, name, query, limit, backend)
+            futures[future] = index
         for future in as_completed(futures):
             index = futures[future]
             try:
@@ -405,7 +452,8 @@ def research(theme, sources=None, limit=5, max_pages=20, use_scrapling=False,
     return {
         "theme": theme.strip(),
         "created_at": datetime.now(timezone.utc).isoformat(),
-        "method": backend + " search / Google News RSS" + (" / OpenCLI" if use_opencli else "") + "; direct page retrieval",
+        "method": backend + " search / Google News RSS" + (" / native tools" if use_direct else "") +
+                  (" / OpenCLI" if use_opencli else "") + "; direct page retrieval",
         "depth": depth,
         "coverage": coverage,
         "results": unique,

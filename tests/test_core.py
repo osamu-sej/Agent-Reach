@@ -2,7 +2,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from reach_research.core import (canonical_url, confirms_social_post, extract_html,
+from reach_research.core import (canonical_url, confirms_social_post, direct_search, extract_html,
                                  markdown_report, opencli_search, parse_rss,
                                  plan_queries, search_source)
 
@@ -45,6 +45,14 @@ class CoreTests(unittest.TestCase):
              patch("reach_research.core.subprocess.run", return_value=SimpleNamespace(returncode=0, stdout=output, stderr="")):
             rows = opencli_search("x", "topic", 5)
         self.assertEqual([row["url"] for row in rows], ["https://x.com/example/status/123"])
+
+    def test_native_github_search_is_read_only(self):
+        output = '[{"name":"demo","description":"Example","url":"https://github.com/a/demo"}]'
+        with patch("reach_research.core.shutil.which", return_value="/usr/bin/gh"), \
+             patch("reach_research.core.subprocess.run", return_value=SimpleNamespace(returncode=0, stdout=output, stderr="")) as run:
+            rows = direct_search("github", "example", 2)
+        self.assertEqual(rows[0]["url"], "https://github.com/a/demo")
+        self.assertEqual(run.call_args.args[0][:3], ["gh", "search", "repos"])
 
     def test_report_separates_verified_and_unverified(self):
         data = {"theme": "T", "created_at": "today", "coverage": {"x": {"status": "discovery_only", "discovered": 1, "read": 0}},

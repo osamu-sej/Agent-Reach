@@ -18,6 +18,7 @@ def main(argv=None):
     parser.add_argument("--depth", choices=("quick", "balanced", "deep"), default="balanced", help="媒体ごとの検索観点数")
     parser.add_argument("--add-query", action="append", default=[], help="追加検索語句（繰り返し指定可）")
     parser.add_argument("--opencli", action="store_true", help="既存のOpenCLI/ChromeセッションでもSNSを検索")
+    parser.add_argument("--no-direct", action="store_true", help="GitHub CLIとyt-dlpによる直接検索を無効化")
     parser.add_argument("--output", type=Path, default=Path("reports/latest"), help="出力先の接頭辞")
     args = parser.parse_args(argv)
     if args.doctor:
@@ -28,7 +29,7 @@ def main(argv=None):
     try:
         data = research(args.theme, [part.strip() for part in args.sources.split(",") if part.strip()],
                         args.limit, args.max_pages, args.scrapling, args.search_backend,
-                        args.depth, args.add_query, args.opencli)
+                        args.depth, args.add_query, args.opencli, not args.no_direct)
     except (ValueError, ImportError) as exc:
         parser.error(str(exc))
     args.output.parent.mkdir(parents=True, exist_ok=True)
